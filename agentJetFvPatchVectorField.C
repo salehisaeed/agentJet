@@ -62,8 +62,6 @@ void Foam::agentJetFvPatchVectorField::writeFileHeader(Ostream& os)
 
 Foam::scalarField Foam::agentJetFvPatchVectorField::environmentState()
 {
-    const fvMesh& mesh = patch().boundaryMesh().mesh();
-
     dictionary probesDict;
     probesDict.add("type", probes::typeName);
     probesDict.add("fixedLocations", "true");
@@ -76,48 +74,14 @@ Foam::scalarField Foam::agentJetFvPatchVectorField::environmentState()
         internalField().mesh().time(),
         probesDict
     );
-
-    Foam::Field<scalar> sampledState;
-
-    if (mesh.foundObject<volScalarField>(stateFieldName_))
-    {
-        sampledState = p.sample<scalar>(stateFieldName_);
-    }
-    else if (mesh.foundObject<volVectorField>(stateFieldName_))
-    {
-        Foam::vectorField sampledVector = p.sample<vector>(stateFieldName_);
-
-        // Flatten vector field into scalar field (component-wise)
-        sampledState.setSize(sampledVector.size() * vector::nComponents);
-        forAll(sampledVector, i)
-        {
-            for (label j = 0; j < vector::nComponents; ++j)
-            {
-                sampledState[i * vector::nComponents + j] = sampledVector[i][j];
-            }
-        }
-    }
-    else
-    {
-        FatalErrorInFunction
-            << "State field " << stateFieldName_ << " must be either"
-            << "volScalarField or volVectorField"
-            << exit(FatalError);
-    }    
     
+    // Sample the pressure field
+    Foam::scalarField sampledState = p.sample<scalar>(stateFieldName_);
+
     // Normalize the field to range [-1, 1] using member data minVal_ and maxVal_
-    if (stateMax_ != stateMin_)  // Avoid division by zero
+    forAll(sampledState, i)
     {
-        forAll(sampledState, i)
-        {
-            sampledState[i] = 2 * ((sampledState[i] - stateMin_) / (stateMax_ - stateMin_)) - 1;
-        }
-    }
-    else
-    {
-        WarningInFunction
-            << "Normalization skipped due to identical min and max values for the state field."
-            << endl;
+        sampledState[i] = 2 * ((sampledState[i] - stateMin_) / (stateMax_ - stateMin_)) - 1;
     }
 
     return sampledState;
@@ -126,14 +90,12 @@ Foam::scalarField Foam::agentJetFvPatchVectorField::environmentState()
 
 Foam::scalar Foam::agentJetFvPatchVectorField::agentAction(const scalarField& state)
 {
-    std::vector<float> stateVec(state.begin(), state.end());
-
-    // //convert scalarField to std::vector<float>, TODO: find a smarter way!
-    // std::vector<float> stateVec(state.size());
-    // forAll(state, i)
-    // {
-    //     stateVec[i] = state[i];
-    // }
+    //convert scalarField to std::vector<float>, TODO: find a smarter way!
+    std::vector<float> stateVec(state.size());
+    forAll(state, i)
+    {
+        stateVec[i] = state[i];
+    }
 
     // Creating the input tensors of the policy model
     cppflow::tensor stateTensor(stateVec, {1, state.size()});
@@ -175,7 +137,6 @@ agentJetFvPatchVectorField
     rampUpPeriod_(0),
     actionNew_(0),
     actionOld_(0),
-    jetDirection_(Zero),
     curTimeIndex_(-1),
     stateFieldName_(),
     stateProbesNo_(),
@@ -205,7 +166,6 @@ agentJetFvPatchVectorField
     rampUpPeriod_(ptf.rampUpPeriod_),
     actionNew_(ptf.actionNew_),
     actionOld_(ptf.actionOld_),
-    jetDirection_(ptf.jetDirection_),
     curTimeIndex_(ptf.curTimeIndex_),
     stateFieldName_(ptf.stateFieldName_),
     stateProbesNo_(ptf.stateProbesNo_),
@@ -258,33 +218,7 @@ agentJetFvPatchVectorField
         dict,
         stateProbesNo_
     );
-
-    if (dict.found("jetDirection"))
-    {
-        jetDirection_ = vectorField("jetDirection", dict, p.size());
-        forAll(jetDirection_, i)
-        {
-            scalar magDir = mag(jetDirection_[i]);
-            if (magDir > SMALL)
-            {
-                jetDirection_[i] /= magDir;
-            }
-            else
-            {
-                FatalErrorInFunction << "Injection jetDirection magnitude is too small"
-                                     << abort(FatalError);
-            }
-        }        
-    }
-    else
-    {
-        // Default to the patch normal jetDirection
-        jetDirection_ = patch().nf();
-        Info << "Actuation jet direction not specified. Using patch normal direction." << endl;
-    }
-
-
-        
+    
     if (controlPeriod_ < rampUpPeriod_)
     {
         FatalErrorInFunction
@@ -320,7 +254,6 @@ agentJetFvPatchVectorField
     rampUpPeriod_(ptf.rampUpPeriod_),
     actionNew_(ptf.actionNew_),
     actionOld_(ptf.actionOld_),
-    jetDirection_(ptf.jetDirection_),
     curTimeIndex_(ptf.curTimeIndex_),
     stateFieldName_(ptf.stateFieldName_),
     stateProbesNo_(ptf.stateProbesNo_),
@@ -348,7 +281,6 @@ agentJetFvPatchVectorField
     rampUpPeriod_(ptf.rampUpPeriod_),
     actionNew_(ptf.actionNew_),
     actionOld_(ptf.actionOld_),
-    jetDirection_(ptf.jetDirection_),
     curTimeIndex_(ptf.curTimeIndex_),
     stateFieldName_(ptf.stateFieldName_),
     stateProbesNo_(ptf.stateProbesNo_),
@@ -415,8 +347,8 @@ void Foam::agentJetFvPatchVectorField::updateCoeffs()
         }
         currentAction = rampCoeff*actionNew_ + (1 - rampCoeff)*actionOld_;
 
-        // Assign the action to the field in the specified direction
-        tmp<vectorField> tvalues(actionBound_ * currentAction * jetDirection_);
+        // Assign the action to the field in the direction normal to the patch
+        tmp<vectorField> tvalues(actionBound_*currentAction*patch().nf());
         
         vectorField::operator=(tvalues);
 
@@ -436,7 +368,6 @@ void Foam::agentJetFvPatchVectorField::write(Ostream& os) const
     os.writeEntry<word>("policyDir", policyDirName_);
     os.writeEntry("actionNew", actionNew_);
     os.writeEntry("actionOld", actionOld_);
-    jetDirection_.writeEntry("jetDirection", os);
     os.writeEntry<word>("stateField", stateFieldName_);
     os.writeEntry("stateProbesNo", stateProbesNo_);
     stateProbeLocations_.writeEntry("stateProbeLocations", os);

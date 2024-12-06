@@ -1,4 +1,0 @@
-SOURCE = \
-agentJetFvPatchVectorField.C \
-
-# sources

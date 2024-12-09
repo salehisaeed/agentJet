@@ -175,7 +175,7 @@ agentJetFvPatchVectorField
     rampUpPeriod_(0),
     actionNew_(0),
     actionOld_(0),
-    jetDirection_(Zero),
+    jetDirection_(p.size()),
     curTimeIndex_(-1),
     stateFieldName_(),
     stateProbesNo_(),
@@ -205,7 +205,7 @@ agentJetFvPatchVectorField
     rampUpPeriod_(ptf.rampUpPeriod_),
     actionNew_(ptf.actionNew_),
     actionOld_(ptf.actionOld_),
-    jetDirection_(ptf.jetDirection_),
+    jetDirection_(ptf.jetDirection_, mapper),
     curTimeIndex_(ptf.curTimeIndex_),
     stateFieldName_(ptf.stateFieldName_),
     stateProbesNo_(ptf.stateProbesNo_),
@@ -282,9 +282,7 @@ agentJetFvPatchVectorField
         jetDirection_ = patch().nf();
         Info << "Actuation jet direction not specified. Using patch normal direction." << endl;
     }
-
-
-        
+     
     if (controlPeriod_ < rampUpPeriod_)
     {
         FatalErrorInFunction
@@ -362,6 +360,30 @@ agentJetFvPatchVectorField
 {}
 
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
+
+void Foam::agentJetFvPatchVectorField::autoMap
+(
+    const fvPatchFieldMapper& m
+)
+{
+    fixedValueFvPatchField<vector>::autoMap(m);
+
+    jetDirection_.autoMap(m);
+}
+
+
+void Foam::agentJetFvPatchVectorField::rmap
+(
+     const fvPatchVectorField& ptf,
+     const labelList& addr
+)
+{
+    fixedValueFvPatchField<vector>::rmap(ptf, addr);
+
+    const auto& aj = dynamic_cast<const Foam::agentJetFvPatchVectorField&>(ptf);
+    jetDirection_.rmap(aj.jetDirection_, addr);
+}
+
 
 void Foam::agentJetFvPatchVectorField::updateCoeffs()
 {

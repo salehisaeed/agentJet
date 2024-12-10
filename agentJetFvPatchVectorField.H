@@ -59,10 +59,13 @@ namespace Foam
 
 class agentJetFvPatchVectorField
 :
-    public fixedValueFvPatchVectorField,
-    public functionObjects::writeFile
+    public fixedValueFvPatchVectorField
+    // public functionObjects::writeFile
 {
     // Private data
+
+        //- Store the dictionary for initializing the writer
+        dictionary dict_;
 
         //- deterministic or stochastic policy
         bool deterministic_;
@@ -110,6 +113,9 @@ class agentJetFvPatchVectorField
         //- DRL model
         cppflow::model model_;
 
+        //- Lazy-initialized writer
+        // std::unique_ptr<functionObjects::writeFile> writer_; 
+        autoPtr<functionObjects::writeFile> writer_;
 
     // Private Member Functions
 
@@ -119,12 +125,14 @@ class agentJetFvPatchVectorField
         //- Make agent action
         scalar agentAction(const scalarField& state);
 
-        //- Save trajectory to file
-        void writeStateAction(const scalarField& state, const scalar actionNew);
+        //- Initialize the write
+        void initializeWriter();
 
         //- Output file header information
         virtual void writeFileHeader(Ostream& os);
 
+        //- Save trajectory to file
+        void writeStateAction(const scalarField& state, const scalar actionNew);
 
     public:
         //- Runtime type information
@@ -190,7 +198,9 @@ class agentJetFvPatchVectorField
                     new agentJetFvPatchVectorField(*this, iF)
                 );
             }
-
+     
+        //- Destructor
+            virtual ~agentJetFvPatchVectorField() = default;
 
     // Member functions
 

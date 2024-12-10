@@ -34,32 +34,6 @@ License
 
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
-void Foam::agentJetFvPatchVectorField::writeStateAction
-(
-    const scalarField& state,
-    const scalar actionNew
-)
-{
-    Ostream& os = file();
-    writeCurrentTime(os);
-
-    os  << actionNew;
-    forAll(state, i)
-    {
-        os  << tab << state[i];
-    }    
-    os  << endl;
-}
-
-void Foam::agentJetFvPatchVectorField::writeFileHeader(Ostream& os)
-{
-    writeHeader(os, "Trajectory actions and states");
-    writeCommented(os, "Time");
-    writeCommented(os, "Action");
-    writeCommented(os, "State (" + Foam::name(stateProbeLocations_.size()) + ")");
-    os << endl;
-}
-
 Foam::scalarField Foam::agentJetFvPatchVectorField::environmentState()
 {
     const fvMesh& mesh = patch().boundaryMesh().mesh();
@@ -159,6 +133,49 @@ Foam::scalar Foam::agentJetFvPatchVectorField::agentAction(const scalarField& st
     return rawAction;
 }
 
+
+void Foam::agentJetFvPatchVectorField::initializeWriter()
+{
+    if (!writer_)
+    {
+        writer_.reset(new functionObjects::writeFile(db(), typeName, "ActionState", dict_));
+
+        Ostream& os = writer_->file();
+        writeFileHeader(os);
+    }
+}
+
+
+void Foam::agentJetFvPatchVectorField::writeFileHeader(Ostream& os)
+{
+    writer_->writeHeader(os, "Trajectory actions and states");
+    writer_->writeCommented(os, "Time");
+    writer_->writeCommented(os, "Action");
+    writer_->writeCommented(os, "State (" + Foam::name(stateProbeLocations_.size()) + ")");
+    os << endl;
+}
+
+
+void Foam::agentJetFvPatchVectorField::writeStateAction
+(
+    const scalarField& state,
+    const scalar actionNew
+)
+{
+    initializeWriter();
+
+    Ostream& os = writer_->file();
+    writer_->writeCurrentTime(os);
+
+    os  << actionNew;
+    forAll(state, i)
+    {
+        os  << tab << state[i];
+    }    
+    os  << endl;
+}
+
+
 // * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
 
 Foam::agentJetFvPatchVectorField::
@@ -169,7 +186,8 @@ agentJetFvPatchVectorField
 )
 :
     fixedValueFvPatchField<vector>(p, iF),
-    functionObjects::writeFile(db(), typeName, "ActionState"),
+    // functionObjects::writeFile(db(), typeName, "ActionState"),
+    dict_(),
     deterministic_(false),
     controlPeriod_(0),
     rampUpPeriod_(0),
@@ -199,7 +217,8 @@ agentJetFvPatchVectorField
 )
 :
     fixedValueFvPatchField<vector>(ptf, p, iF, mapper),
-    functionObjects::writeFile(ptf),    
+    // functionObjects::writeFile(ptf),
+    dict_(ptf.dict_),
     deterministic_(ptf.deterministic_),
     controlPeriod_(ptf.controlPeriod_),
     rampUpPeriod_(ptf.rampUpPeriod_),
@@ -218,6 +237,7 @@ agentJetFvPatchVectorField
     model_(ptf.model_)
 {}
 
+
 Foam::agentJetFvPatchVectorField::
 agentJetFvPatchVectorField
 (
@@ -227,7 +247,8 @@ agentJetFvPatchVectorField
 )
 :
     fixedValueFvPatchField<vector>(p, iF, dict, false),
-    functionObjects::writeFile(db(),typeName,"ActionState",dict),
+    // functionObjects::writeFile(db(),typeName,"ActionState",dict),
+    dict_(dict), // Store the dictionary
     deterministic_(dict.get<bool>("deterministic")),
     controlPeriod_(dict.get<scalar>("controlPeriod")),
     rampUpPeriod_(dict.get<scalar>("rampUpPeriod")),
@@ -300,8 +321,6 @@ agentJetFvPatchVectorField
     {
         updateCoeffs();
     }
-    
-    writeFileHeader(file());
 }
 
 
@@ -312,7 +331,8 @@ agentJetFvPatchVectorField
 )
 :
     fixedValueFvPatchField<vector>(ptf),
-    functionObjects::writeFile(ptf),
+    // functionObjects::writeFile(ptf),
+    dict_(ptf.dict_),
     deterministic_(ptf.deterministic_),
     controlPeriod_(ptf.controlPeriod_),
     rampUpPeriod_(ptf.rampUpPeriod_),
@@ -340,7 +360,8 @@ agentJetFvPatchVectorField
 )
 :
     fixedValueFvPatchField<vector>(ptf, iF),
-    functionObjects::writeFile(ptf),
+    // functionObjects::writeFile(ptf),
+    dict_(ptf.dict_),
     deterministic_(ptf.deterministic_),
     controlPeriod_(ptf.controlPeriod_),
     rampUpPeriod_(ptf.rampUpPeriod_),
@@ -356,8 +377,9 @@ agentJetFvPatchVectorField
     stateMax_(ptf.stateMax_),
     actionBound_(ptf.actionBound_),
     policyDirName_(ptf.policyDirName_),
-    model_(ptf.model_) 
+    model_(ptf.model_)
 {}
+
 
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
 

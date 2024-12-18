@@ -291,7 +291,7 @@ agentJetFvPatchVectorField
     deterministic_(dict.get<bool>("deterministic")),
     controlPeriod_(dict.get<scalar>("controlPeriod")),
     rampUpPeriod_(dict.get<scalar>("rampUpPeriod")),
-    actionNew_(0.0),
+    actionNew_(dict.getOrDefault<scalar>("actionNew", 0.0)),
     actionOld_(dict.getOrDefault<scalar>("actionOld", 0.0)),
     curTimeIndex_(-1),
     stateFieldName_(dict.get<word>("stateField")),

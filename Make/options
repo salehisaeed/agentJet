@@ -1,6 +1,6 @@
 EXE_INC = \
     -std=c++17 \
-    -Wno-old-style-cast \
+    -Wno-deprecated-declarations -Wno-old-style-cast -Wno-redundant-move -Wno-dangling-reference \
     -I$(LIB_SRC)/finiteVolume/lnInclude \
     -I$(LIB_SRC)/fileFormats/lnInclude \
     -I$(LIB_SRC)/surfMesh/lnInclude \
@@ -9,7 +9,9 @@ EXE_INC = \
     -I$(LIB_SRC)/functionObjects/forces/lnInclude \
     -I$(LIB_SRC)/sampling/lnInclude \
     -I$(CPPFLOW_LIBRARIES)/include \
-    -I$(TF_LIBRARIES)/include
+    -I$(TF_LIBRARIES)/include \
+    -I$(TORCH_LIBRARIES)/include \
+    -I$(TORCH_LIBRARIES)/include/torch/csrc/api/include    
 
 LIB_LIBS = \
     -lfiniteVolume \
@@ -21,5 +23,9 @@ LIB_LIBS = \
     -lforces \
     -lsampling \
     -L$(TF_LIBRARIES)/lib \
-    -Wl,-rpath $(TF_LIBRARIES)/lib
+    -Wl,-rpath $(TF_LIBRARIES)/lib \
+    -Wl,-rpath,$(TORCH_LIBRARIES)/lib $(TORCH_LIBRARIES)/lib/libtorch.so $(TORCH_LIBRARIES)/lib/libc10.so \
+    -Wl,--no-as-needed,$(TORCH_LIBRARIES)/lib/libtorch_cpu.so \
+    -Wl,--as-needed $(TORCH_LIBRARIES)/lib/libc10.so \
+    -Wl,--no-as-needed,$(TORCH_LIBRARIES)/lib/libtorch.so    
     

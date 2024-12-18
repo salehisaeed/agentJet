@@ -100,14 +100,49 @@ Foam::scalarField Foam::agentJetFvPatchVectorField::environmentState()
 
 Foam::scalar Foam::agentJetFvPatchVectorField::agentAction(const scalarField& state)
 {
-    std::vector<float> stateVec(state.begin(), state.end());
+    if (modelType_ == "PyTorch")
+    {
+        return agentActionPT(state);
+    }
+    else if (modelType_ == "TensorFlow")
+    {
+        return agentActionTF(state);
+    }
+    else
+    {
+        FatalErrorInFunction
+            << "Invalid modelType '" << modelType_
+            << "'. Supported values are 'TensorFlow' and 'PyTorch'."
+            << abort(FatalError);
+        return 0;
+    }
+}
 
-    // //convert scalarField to std::vector<float>, TODO: find a smarter way!
-    // std::vector<float> stateVec(state.size());
-    // forAll(state, i)
-    // {
-    //     stateVec[i] = state[i];
-    // }
+
+Foam::scalar Foam::agentJetFvPatchVectorField::agentActionPT(const scalarField& state)
+{
+    std::vector<scalar> stateVec(state.begin(), state.end());
+
+    // Convert state vector to Torch tensor
+    torch::Tensor obs_tensor = torch::from_blob
+    (
+        stateVec.data(),
+        {1, (long)state.size()},
+        torch::kDouble
+    ).clone(); // Clone to avoid issues with memory management
+
+    // Feeding the inputs to the loaded model to create an output (action)
+    torch::Tensor action_tensor = ptModel_->forward({obs_tensor, deterministic_}).toTensor();
+
+    // Get the normalized action value from the model
+    Foam::scalar rawAction = action_tensor[0][0].item<scalar>();
+    return rawAction;
+}
+
+
+Foam::scalar Foam::agentJetFvPatchVectorField::agentActionTF(const scalarField& state)
+{
+    std::vector<float> stateVec(state.begin(), state.end());
 
     // Creating the input tensors of the policy model
     cppflow::tensor stateTensor(stateVec, {1, state.size()});
@@ -116,7 +151,7 @@ Foam::scalar Foam::agentJetFvPatchVectorField::agentAction(const scalarField& st
 
     // Feeding the inputs to the loaded model to create an output (action)
     // The string arguements are found using saved_model_cli of Tensorflow
-    auto action = model_
+    auto action = tfModel_.ref()
     (
         {
             {"serving_default_args_0:0", stateTensor}, // Model input 0,
@@ -203,7 +238,9 @@ agentJetFvPatchVectorField
     stateMax_(),
     actionBound_(),
     policyDirName_(),
-    model_(cppflow::model("model"))
+    modelType_(),
+    tfModel_(),
+    ptModel_()
 {}
 
 
@@ -234,7 +271,9 @@ agentJetFvPatchVectorField
     stateMax_(ptf.stateMax_),
     actionBound_(ptf.actionBound_),
     policyDirName_(ptf.policyDirName_),
-    model_(ptf.model_)
+    modelType_(ptf.modelType_),
+    tfModel_(ptf.tfModel_),
+    ptModel_(ptf.ptModel_)
 {}
 
 
@@ -262,17 +301,49 @@ agentJetFvPatchVectorField
     stateMax_(dict.get<scalar>("stateMax")),
     actionBound_(dict.get<scalar>("actionBound")),
     policyDirName_(dict.get<fileName>("policyDir")),
-    model_
-    (
-        cppflow::model
-        (
-            fileName
-            (
-                db().time().globalPath()/policyDirName_
-            )
-        )
-    )
+    modelType_(dict.get<word>("modelType"))
 {
+    fileName modelPath = db().time().globalPath()/policyDirName_;
+
+    if (modelType_ == "PyTorch")
+    {
+        modelPath = db().time().globalPath() / policyDirName_;
+        try
+        {
+            ptModel_.reset(new torch::jit::Module(torch::jit::load(modelPath / "policy.pt")));
+            ptModel_->eval();
+        }
+        catch (const c10::Error& e)
+        {
+            FatalErrorInFunction
+                << "Error loading PyTorch model from '" << modelPath << "/policy.pt'."
+                << " Ensure the file exists and is accessible. Error details: " << e.what()
+                << abort(FatalError);
+        }
+    }
+    else if (modelType_ == "TensorFlow")
+    {
+        try
+        {
+            tfModel_.reset(new cppflow::model(modelPath));
+        }
+        catch (const std::exception& e)
+        {
+            FatalErrorInFunction
+                << "Error loading TensorFlow model from '" << modelPath << "'."
+                << " Ensure the directory is accessible and contains the proper model files."
+                << " Error details: " << e.what()
+                << abort(FatalError);
+        }
+    }
+    else
+    {
+        FatalErrorInFunction
+            << "Invalid modelType '" << modelType_
+            << "'. Supported values are 'TensorFlow' and 'PyTorch'."
+            << abort(FatalError);
+    }
+
     stateProbeLocations_ = vectorField
     (
         "stateProbeLocations",
@@ -348,7 +419,9 @@ agentJetFvPatchVectorField
     stateMax_(ptf.stateMax_),
     actionBound_(ptf.actionBound_),
     policyDirName_(ptf.policyDirName_),
-    model_(ptf.model_)
+    modelType_(ptf.modelType_),
+    tfModel_(ptf.tfModel_),
+    ptModel_(ptf.ptModel_)
 {}
 
 
@@ -377,7 +450,9 @@ agentJetFvPatchVectorField
     stateMax_(ptf.stateMax_),
     actionBound_(ptf.actionBound_),
     policyDirName_(ptf.policyDirName_),
-    model_(ptf.model_)
+    modelType_(ptf.modelType_),
+    tfModel_(ptf.tfModel_),
+    ptModel_(ptf.ptModel_)
 {}
 
 
@@ -478,6 +553,7 @@ void Foam::agentJetFvPatchVectorField::write(Ostream& os) const
     os.writeEntry("controlPeriod", controlPeriod_);
     os.writeEntry("rampUpPeriod", rampUpPeriod_);
     os.writeEntry<word>("policyDir", policyDirName_);
+    os.writeEntry<word>("modelType", modelType_);
     os.writeEntry("actionNew", actionNew_);
     os.writeEntry("actionOld", actionOld_);
     jetDirection_.writeEntry("jetDirection", os);

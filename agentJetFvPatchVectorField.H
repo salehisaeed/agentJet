@@ -45,6 +45,7 @@ SourceFiles
 
 #include <cppflow/ops.h>
 #include <cppflow/model.h>
+#include <torch/script.h>
 #include "fixedValueFvPatchFields.H"
 #include "writeFile.H"
 
@@ -110,11 +111,16 @@ class agentJetFvPatchVectorField
         //- Directory name of the saved TensorFlow policy model
         fileName policyDirName_;
 
-        //- DRL model
-        cppflow::model model_;
+        // Model type: "TensorFlow" or "PyTorch"
+        word modelType_;
 
+        //- TensorFlow model
+        autoPtr<cppflow::model> tfModel_;
+
+        //- PyTorch model
+        autoPtr<torch::jit::script::Module> ptModel_;
+        
         //- Lazy-initialized writer
-        // std::unique_ptr<functionObjects::writeFile> writer_; 
         autoPtr<functionObjects::writeFile> writer_;
 
     // Private Member Functions
@@ -124,6 +130,8 @@ class agentJetFvPatchVectorField
 
         //- Make agent action
         scalar agentAction(const scalarField& state);
+        scalar agentActionTF(const scalarField& state);
+        scalar agentActionPT(const scalarField& state);
 
         //- Initialize the write
         void initializeWriter();

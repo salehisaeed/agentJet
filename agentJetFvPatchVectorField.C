@@ -98,6 +98,34 @@ Foam::scalarField Foam::agentJetFvPatchVectorField::environmentState()
 }
 
 
+void Foam::agentJetFvPatchVectorField::loadModel()
+{
+    if ((modelType_ == "PyTorch" && !ptModel_) || (modelType_ == "TensorFlow" && !tfModel_))
+    {
+        fileName modelPath = db().time().globalPath() / policyDirName_;
+
+        if (modelType_ == "PyTorch")
+        {
+            ptModel_.reset(new torch::jit::Module(torch::jit::load(modelPath / "policy.pt")));
+            ptModel_->eval();
+            Info << "PyTorch model loaded successfully from " << modelPath << endl;
+        }
+        else if (modelType_ == "TensorFlow")
+        {
+            tfModel_.reset(new cppflow::model(modelPath));
+            Info << "TensorFlow model loaded successfully from " << modelPath << endl;
+        }
+        else
+        {
+            FatalErrorInFunction
+                << "Invalid modelType '" << modelType_
+                << "'. Supported values are 'TensorFlow' and 'PyTorch'."
+                << abort(FatalError);
+        }
+    }
+}
+
+
 Foam::scalar Foam::agentJetFvPatchVectorField::agentAction(const scalarField& state)
 {
     if (modelType_ == "PyTorch")
@@ -303,47 +331,6 @@ agentJetFvPatchVectorField
     policyDirName_(dict.get<fileName>("policyDir")),
     modelType_(dict.get<word>("modelType"))
 {
-    fileName modelPath = db().time().globalPath()/policyDirName_;
-
-    if (modelType_ == "PyTorch")
-    {
-        // modelPath = db().time().globalPath() / policyDirName_;
-        try
-        {
-            ptModel_.reset(new torch::jit::Module(torch::jit::load(modelPath / "policy.pt")));
-            ptModel_->eval();
-        }
-        catch (const c10::Error& e)
-        {
-            FatalErrorInFunction
-                << "Error loading PyTorch model from '" << modelPath << "/policy.pt'."
-                << " Ensure the file exists and is accessible. Error details: " << e.what()
-                << abort(FatalError);
-        }
-    }
-    else if (modelType_ == "TensorFlow")
-    {
-        try
-        {
-            tfModel_.reset(new cppflow::model(modelPath));
-        }
-        catch (const std::exception& e)
-        {
-            FatalErrorInFunction
-                << "Error loading TensorFlow model from '" << modelPath << "'."
-                << " Ensure the directory is accessible and contains the proper model files."
-                << " Error details: " << e.what()
-                << abort(FatalError);
-        }
-    }
-    else
-    {
-        FatalErrorInFunction
-            << "Invalid modelType '" << modelType_
-            << "'. Supported values are 'TensorFlow' and 'PyTorch'."
-            << abort(FatalError);
-    }
-
     stateProbeLocations_ = vectorField
     (
         "stateProbeLocations",
@@ -512,6 +499,7 @@ void Foam::agentJetFvPatchVectorField::updateCoeffs()
             // master processor and broadcast to other processors
             if (Pstream::master())
             {
+                loadModel();
                 actionOld_ = actionNew_;
                 actionNew_ = agentAction(state);
                 writeStateAction(state, actionNew_);

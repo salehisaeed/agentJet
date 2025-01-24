@@ -128,6 +128,9 @@ class agentJetFvPatchVectorField
         //- Get environment state
         scalarField environmentState();
 
+        // Function to load the model
+        void loadModel();
+
         //- Make agent action
         scalar agentAction(const scalarField& state);
         scalar agentActionTF(const scalarField& state);

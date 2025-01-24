@@ -307,7 +307,7 @@ agentJetFvPatchVectorField
 
     if (modelType_ == "PyTorch")
     {
-        modelPath = db().time().globalPath() / policyDirName_;
+        // modelPath = db().time().globalPath() / policyDirName_;
         try
         {
             ptModel_.reset(new torch::jit::Module(torch::jit::load(modelPath / "policy.pt")));

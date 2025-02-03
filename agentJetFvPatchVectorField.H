@@ -77,11 +77,17 @@ class agentJetFvPatchVectorField
         //- Times to ramp-up a new controller value must be less than or equal to controlInterval_
         scalar rampUpPeriod_;
 
+        //- Number of actions
+        label nActions_;
+
+        //- Stores the action index for each face
+        labelList faceActionMapping_;
+
         //- Next action
-        scalar actionNew_;
+        scalarField actionNew_;
 
         //- Previously predicted angular velocity
-        scalar actionOld_;
+        scalarField actionOld_;
 
         //- User-specified direction
         vectorField jetDirection_; 
@@ -128,12 +134,15 @@ class agentJetFvPatchVectorField
         //- Get environment state
         scalarField environmentState();
 
+        //- This function assigns each face to the correct bounding box action
+        void initializeFaceMapping();
+
         // Function to load the model
         void loadModel();
 
         //- Make agent action
-        scalar agentAction(const scalarField& state);
-        scalar agentActionTF(const scalarField& state);
+        scalarField agentAction(const scalarField& state);
+        scalarField agentActionTF(const scalarField& state);
         scalar agentActionPT(const scalarField& state);
 
         //- Initialize the write
@@ -143,7 +152,7 @@ class agentJetFvPatchVectorField
         virtual void writeFileHeader(Ostream& os);
 
         //- Save trajectory to file
-        void writeStateAction(const scalarField& state, const scalar actionNew);
+        void writeStateAction(const scalarField& state, const scalarField actionNew);
 
     public:
         //- Runtime type information

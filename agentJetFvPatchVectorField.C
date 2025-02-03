@@ -98,6 +98,106 @@ Foam::scalarField Foam::agentJetFvPatchVectorField::environmentState()
 }
 
 
+void Foam::agentJetFvPatchVectorField::initializeFaceMapping()
+{
+    faceActionMapping_.setSize(patch().size(), 0);
+    jetDirection_.setSize(patch().size());
+    const vectorField& patchNormal = patch().nf();
+
+    if (dict_.found("faceActionMapping") && dict_.found("jetDirections"))
+    {
+        faceActionMapping_ = dict_.lookup("faceActionMapping");
+        jetDirection_ = vectorField("jetDirections", dict_, patch().size());
+        return;
+    }
+
+    // Handle single-action case
+    if (nActions_ == 1)
+    {
+        if (dict_.found("jetDirection"))
+        {
+            jetDirection_ = vectorField("jetDirection", dict_, patch().size());
+            forAll(jetDirection_, i)
+            {
+                scalar magDir = mag(jetDirection_[i]);
+                if (magDir > SMALL)
+                {
+                    jetDirection_[i] /= magDir;
+                }
+                else
+                {
+                    FatalErrorInFunction << "Injection jetDirection magnitude is too small"
+                                         << abort(FatalError);
+                }
+            }
+        }
+        else
+        {
+            jetDirection_ = patchNormal;
+            Info << "No jetDirection specified. Using patch normal direction." << endl;
+        }
+        return;
+    }
+
+    // Multi-action case (nActions_ > 1) requires `multiActionMapping` dictionary
+    if (!dict_.found("multiActionMapping"))
+    {
+        FatalErrorInFunction
+            << "'multiActionMapping' must be provided when nActions > 1."
+            << abort(FatalError);
+    }
+
+    const List<dictionary> mappingEntries = dict_.lookup("multiActionMapping");
+
+    forAll(mappingEntries, regionI)
+    {
+        const dictionary& regionDict = mappingEntries[regionI];
+
+        vector minCorner, maxCorner, jetDir;
+        regionDict.lookup("minCorner") >> minCorner;
+        regionDict.lookup("maxCorner") >> maxCorner;
+        label actionIdx = regionDict.lookupOrDefault<label>("actionIndex", -1);
+
+        bool hasJetDirection = regionDict.found("jetDirection");
+        if (hasJetDirection)
+        {
+            regionDict.lookup("jetDirection") >> jetDir;
+            scalar magDir = mag(jetDir);
+            if (magDir > SMALL)
+            {
+                jetDir /= magDir;
+            }
+            else
+            {
+                FatalErrorInFunction << "jetDirection magnitude too small for region " << regionI
+                                    << abort(FatalError);
+            }
+        }
+        else
+        {
+            Info << "No jetDirection specified for region " << regionI
+                 << ". Using patch normal direction instead." << endl;
+        }
+
+        forAll(patch(), faceI)
+        {
+            const vector faceCenter = patch().Cf()[faceI];
+
+            if
+            (
+                faceCenter.x() >= minCorner.x() && faceCenter.x() <= maxCorner.x() &&
+                faceCenter.y() >= minCorner.y() && faceCenter.y() <= maxCorner.y() &&
+                faceCenter.z() >= minCorner.z() && faceCenter.z() <= maxCorner.z()
+            )
+            {
+                faceActionMapping_[faceI] = actionIdx;
+                jetDirection_[faceI] = hasJetDirection ? jetDir : patchNormal[faceI];
+            }
+        }
+    }
+}
+
+
 void Foam::agentJetFvPatchVectorField::loadModel()
 {
     if ((modelType_ == "PyTorch" && !ptModel_) || (modelType_ == "TensorFlow" && !tfModel_))
@@ -126,13 +226,13 @@ void Foam::agentJetFvPatchVectorField::loadModel()
 }
 
 
-Foam::scalar Foam::agentJetFvPatchVectorField::agentAction(const scalarField& state)
+Foam::scalarField Foam::agentJetFvPatchVectorField::agentAction(const scalarField& state)
 {
-    if (modelType_ == "PyTorch")
-    {
-        return agentActionPT(state);
-    }
-    else if (modelType_ == "TensorFlow")
+    // if (modelType_ == "PyTorch")
+    // {
+    //     return agentActionPT(state);
+    // }
+    if (modelType_ == "TensorFlow")
     {
         return agentActionTF(state);
     }
@@ -142,7 +242,7 @@ Foam::scalar Foam::agentJetFvPatchVectorField::agentAction(const scalarField& st
             << "Invalid modelType '" << modelType_
             << "'. Supported values are 'TensorFlow' and 'PyTorch'."
             << abort(FatalError);
-        return 0;
+        return scalarField();
     }
 }
 
@@ -162,13 +262,13 @@ Foam::scalar Foam::agentJetFvPatchVectorField::agentActionPT(const scalarField& 
     // Feeding the inputs to the loaded model to create an output (action)
     torch::Tensor action_tensor = ptModel_->forward({obs_tensor, deterministic_}).toTensor();
 
-    // Get the normalized action value from the model
-    Foam::scalar rawAction = action_tensor[0][0].item<scalar>();
+    // Get the raw action value from the model
+    scalar rawAction = action_tensor[0][0].item<scalar>();
     return rawAction;
 }
 
 
-Foam::scalar Foam::agentJetFvPatchVectorField::agentActionTF(const scalarField& state)
+Foam::scalarField Foam::agentJetFvPatchVectorField::agentActionTF(const scalarField& state)
 {
     std::vector<float> stateVec(state.begin(), state.end());
 
@@ -190,8 +290,13 @@ Foam::scalar Foam::agentJetFvPatchVectorField::agentActionTF(const scalarField& 
         }
     );
 
-    // Get the normalized action value from the model
-    Foam::scalar rawAction = action[0].get_data<float>()[0];
+    // Get the raw action value from the model
+    std::vector<float> rawActionVec = action[0].get_data<float>();
+    scalarField rawAction(rawActionVec.size());
+    forAll(rawAction, i)
+    {
+        rawAction[i] = rawActionVec[i];
+    }
 
     return rawAction;
 }
@@ -218,11 +323,11 @@ void Foam::agentJetFvPatchVectorField::writeFileHeader(Ostream& os)
     os << endl;
 }
 
-
+//TODO: Write multi component action
 void Foam::agentJetFvPatchVectorField::writeStateAction
 (
     const scalarField& state,
-    const scalar actionNew
+    const scalarField actionNew
 )
 {
     initializeWriter();
@@ -254,6 +359,8 @@ agentJetFvPatchVectorField
     deterministic_(false),
     controlPeriod_(0),
     rampUpPeriod_(0),
+    nActions_(1),
+    faceActionMapping_(),
     actionNew_(0),
     actionOld_(0),
     jetDirection_(p.size()),
@@ -287,6 +394,8 @@ agentJetFvPatchVectorField
     deterministic_(ptf.deterministic_),
     controlPeriod_(ptf.controlPeriod_),
     rampUpPeriod_(ptf.rampUpPeriod_),
+    nActions_(ptf.nActions_),
+    faceActionMapping_(ptf.faceActionMapping_),
     actionNew_(ptf.actionNew_),
     actionOld_(ptf.actionOld_),
     jetDirection_(ptf.jetDirection_, mapper),
@@ -319,8 +428,9 @@ agentJetFvPatchVectorField
     deterministic_(dict.get<bool>("deterministic")),
     controlPeriod_(dict.get<scalar>("controlPeriod")),
     rampUpPeriod_(dict.get<scalar>("rampUpPeriod")),
-    actionNew_(dict.getOrDefault<scalar>("actionNew", 0.0)),
-    actionOld_(dict.getOrDefault<scalar>("actionOld", 0.0)),
+    nActions_(dict.getOrDefault<label>("nActions", 1)),
+    actionNew_(dict.getOrDefault<scalarField>("actionNew", scalarField(nActions_, 0))),
+    actionOld_(dict.getOrDefault<scalarField>("actionOld", scalarField(nActions_, 0))),
     curTimeIndex_(-1),
     stateFieldName_(dict.get<word>("stateField")),
     stateProbesNo_(dict.get<label>("stateProbesNo")),
@@ -331,36 +441,14 @@ agentJetFvPatchVectorField
     policyDirName_(dict.get<fileName>("policyDir")),
     modelType_(dict.get<word>("modelType"))
 {
+    initializeFaceMapping();
+
     stateProbeLocations_ = vectorField
     (
         "stateProbeLocations",
         dict,
         stateProbesNo_
     );
-
-    if (dict.found("jetDirection"))
-    {
-        jetDirection_ = vectorField("jetDirection", dict, p.size());
-        forAll(jetDirection_, i)
-        {
-            scalar magDir = mag(jetDirection_[i]);
-            if (magDir > SMALL)
-            {
-                jetDirection_[i] /= magDir;
-            }
-            else
-            {
-                FatalErrorInFunction << "Injection jetDirection magnitude is too small"
-                                     << abort(FatalError);
-            }
-        }        
-    }
-    else
-    {
-        // Default to the patch normal jetDirection
-        jetDirection_ = patch().nf();
-        Info << "Actuation jet direction not specified. Using patch normal direction." << endl;
-    }
      
     if (controlPeriod_ < rampUpPeriod_)
     {
@@ -394,6 +482,8 @@ agentJetFvPatchVectorField
     deterministic_(ptf.deterministic_),
     controlPeriod_(ptf.controlPeriod_),
     rampUpPeriod_(ptf.rampUpPeriod_),
+    nActions_(ptf.nActions_),
+    faceActionMapping_(ptf.faceActionMapping_),
     actionNew_(ptf.actionNew_),
     actionOld_(ptf.actionOld_),
     jetDirection_(ptf.jetDirection_),
@@ -425,6 +515,8 @@ agentJetFvPatchVectorField
     deterministic_(ptf.deterministic_),
     controlPeriod_(ptf.controlPeriod_),
     rampUpPeriod_(ptf.rampUpPeriod_),
+    nActions_(ptf.nActions_),
+    faceActionMapping_(ptf.faceActionMapping_),
     actionNew_(ptf.actionNew_),
     actionOld_(ptf.actionOld_),
     jetDirection_(ptf.jetDirection_),
@@ -488,8 +580,9 @@ void Foam::agentJetFvPatchVectorField::updateCoeffs()
         const label nControlSteps = controlPeriod_ / dt;
         const label nRampSteps = rampUpPeriod_ / dt;
 
-        scalar currentAction(actionNew_);
+        scalarField currentAction(actionNew_);
         label currentControlStep = (timeIndex % nControlSteps + nControlSteps) % nControlSteps;
+
         if (currentControlStep == 1)
         {
             Info<< "Updating agent action with policy model" << endl;
@@ -522,9 +615,14 @@ void Foam::agentJetFvPatchVectorField::updateCoeffs()
         }
         currentAction = rampCoeff*actionNew_ + (1 - rampCoeff)*actionOld_;
 
-        // Assign the action to the field in the specified direction
-        tmp<vectorField> tvalues(actionBound_ * currentAction * jetDirection_);
-        
+        tmp<vectorField> tvalues(new vectorField(patch().size(), vector::zero));
+        vectorField& values = tvalues.ref();
+        forAll(patch(), faceI)
+        {
+            label actionIndex = faceActionMapping_[faceI];
+            values[faceI] = actionBound_ * currentAction[actionIndex] * jetDirection_[faceI];
+        }
+
         vectorField::operator=(tvalues);
 
         curTimeIndex_ = db().time().timeIndex();
@@ -540,11 +638,13 @@ void Foam::agentJetFvPatchVectorField::write(Ostream& os) const
     os.writeEntry<bool>("deterministic", deterministic_);
     os.writeEntry("controlPeriod", controlPeriod_);
     os.writeEntry("rampUpPeriod", rampUpPeriod_);
+    os.writeEntry("nActions", nActions_);
     os.writeEntry<word>("policyDir", policyDirName_);
     os.writeEntry<word>("modelType", modelType_);
     os.writeEntry("actionNew", actionNew_);
     os.writeEntry("actionOld", actionOld_);
-    jetDirection_.writeEntry("jetDirection", os);
+    faceActionMapping_.writeEntry("faceActionMapping", os);
+    jetDirection_.writeEntry("jetDirections", os);
     os.writeEntry<word>("stateField", stateFieldName_);
     os.writeEntry("stateProbesNo", stateProbesNo_);
     stateProbeLocations_.writeEntry("stateProbeLocations", os);
@@ -554,6 +654,7 @@ void Foam::agentJetFvPatchVectorField::write(Ostream& os) const
     os.writeEntry("actionBound", actionBound_);
     writeEntry("value", os);
 }
+    
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 

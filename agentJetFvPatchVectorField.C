@@ -34,6 +34,106 @@ License
 
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
+void Foam::agentJetFvPatchVectorField::initializeFaceMapping()
+{
+    faceActionMapping_.setSize(patch().size(), 0);
+    jetDirection_.setSize(patch().size());
+    const vectorField& patchNormal = patch().nf();
+
+    if (dict_.found("faceActionMapping") && dict_.found("jetDirections"))
+    {
+        faceActionMapping_ = dict_.lookup("faceActionMapping");
+        jetDirection_ = vectorField("jetDirections", dict_, patch().size());
+        return;
+    }
+
+    // Handle single-action case
+    if (nActions_ == 1)
+    {
+        if (dict_.found("jetDirection"))
+        {
+            jetDirection_ = vectorField("jetDirection", dict_, patch().size());
+            forAll(jetDirection_, i)
+            {
+                scalar magDir = mag(jetDirection_[i]);
+                if (magDir > SMALL)
+                {
+                    jetDirection_[i] /= magDir;
+                }
+                else
+                {
+                    FatalErrorInFunction << "Injection jetDirection magnitude is too small"
+                                         << abort(FatalError);
+                }
+            }
+        }
+        else
+        {
+            jetDirection_ = patchNormal;
+            Info << "No jetDirection specified. Using patch normal direction." << endl;
+        }
+        return;
+    }
+
+    // Multi-action case (nActions_ > 1) requires multiActionMapping dictionary
+    if (!dict_.found("multiActionMapping"))
+    {
+        FatalErrorInFunction
+            << "'multiActionMapping' must be provided when nActions > 1."
+            << abort(FatalError);
+    }
+
+    const List<dictionary> mappingEntries = dict_.lookup("multiActionMapping");
+
+    forAll(mappingEntries, regionI)
+    {
+        const dictionary& regionDict = mappingEntries[regionI];
+
+        vector minCorner, maxCorner, jetDir;
+        regionDict.lookup("minCorner") >> minCorner;
+        regionDict.lookup("maxCorner") >> maxCorner;
+        label actionIdx = regionDict.lookupOrDefault<label>("actionIndex", -1);
+
+        bool hasJetDirection = regionDict.found("jetDirection");
+        if (hasJetDirection)
+        {
+            regionDict.lookup("jetDirection") >> jetDir;
+            scalar magDir = mag(jetDir);
+            if (magDir > SMALL)
+            {
+                jetDir /= magDir;
+            }
+            else
+            {
+                FatalErrorInFunction << "jetDirection magnitude too small for region " << regionI
+                                    << abort(FatalError);
+            }
+        }
+        else
+        {
+            Info << "No jetDirection specified for region " << regionI
+                 << ". Using patch normal direction instead." << endl;
+        }
+
+        forAll(patch(), faceI)
+        {
+            const vector faceCenter = patch().Cf()[faceI];
+
+            if
+            (
+                faceCenter.x() >= minCorner.x() && faceCenter.x() <= maxCorner.x() &&
+                faceCenter.y() >= minCorner.y() && faceCenter.y() <= maxCorner.y() &&
+                faceCenter.z() >= minCorner.z() && faceCenter.z() <= maxCorner.z()
+            )
+            {
+                faceActionMapping_[faceI] = actionIdx;
+                jetDirection_[faceI] = hasJetDirection ? jetDir : patchNormal[faceI];
+            }
+        }
+    }
+}
+
+
 Foam::scalarField Foam::agentJetFvPatchVectorField::environmentState()
 {
     const fvMesh& mesh = patch().boundaryMesh().mesh();
@@ -98,106 +198,6 @@ Foam::scalarField Foam::agentJetFvPatchVectorField::environmentState()
 }
 
 
-void Foam::agentJetFvPatchVectorField::initializeFaceMapping()
-{
-    faceActionMapping_.setSize(patch().size(), 0);
-    jetDirection_.setSize(patch().size());
-    const vectorField& patchNormal = patch().nf();
-
-    if (dict_.found("faceActionMapping") && dict_.found("jetDirections"))
-    {
-        faceActionMapping_ = dict_.lookup("faceActionMapping");
-        jetDirection_ = vectorField("jetDirections", dict_, patch().size());
-        return;
-    }
-
-    // Handle single-action case
-    if (nActions_ == 1)
-    {
-        if (dict_.found("jetDirection"))
-        {
-            jetDirection_ = vectorField("jetDirection", dict_, patch().size());
-            forAll(jetDirection_, i)
-            {
-                scalar magDir = mag(jetDirection_[i]);
-                if (magDir > SMALL)
-                {
-                    jetDirection_[i] /= magDir;
-                }
-                else
-                {
-                    FatalErrorInFunction << "Injection jetDirection magnitude is too small"
-                                         << abort(FatalError);
-                }
-            }
-        }
-        else
-        {
-            jetDirection_ = patchNormal;
-            Info << "No jetDirection specified. Using patch normal direction." << endl;
-        }
-        return;
-    }
-
-    // Multi-action case (nActions_ > 1) requires `multiActionMapping` dictionary
-    if (!dict_.found("multiActionMapping"))
-    {
-        FatalErrorInFunction
-            << "'multiActionMapping' must be provided when nActions > 1."
-            << abort(FatalError);
-    }
-
-    const List<dictionary> mappingEntries = dict_.lookup("multiActionMapping");
-
-    forAll(mappingEntries, regionI)
-    {
-        const dictionary& regionDict = mappingEntries[regionI];
-
-        vector minCorner, maxCorner, jetDir;
-        regionDict.lookup("minCorner") >> minCorner;
-        regionDict.lookup("maxCorner") >> maxCorner;
-        label actionIdx = regionDict.lookupOrDefault<label>("actionIndex", -1);
-
-        bool hasJetDirection = regionDict.found("jetDirection");
-        if (hasJetDirection)
-        {
-            regionDict.lookup("jetDirection") >> jetDir;
-            scalar magDir = mag(jetDir);
-            if (magDir > SMALL)
-            {
-                jetDir /= magDir;
-            }
-            else
-            {
-                FatalErrorInFunction << "jetDirection magnitude too small for region " << regionI
-                                    << abort(FatalError);
-            }
-        }
-        else
-        {
-            Info << "No jetDirection specified for region " << regionI
-                 << ". Using patch normal direction instead." << endl;
-        }
-
-        forAll(patch(), faceI)
-        {
-            const vector faceCenter = patch().Cf()[faceI];
-
-            if
-            (
-                faceCenter.x() >= minCorner.x() && faceCenter.x() <= maxCorner.x() &&
-                faceCenter.y() >= minCorner.y() && faceCenter.y() <= maxCorner.y() &&
-                faceCenter.z() >= minCorner.z() && faceCenter.z() <= maxCorner.z()
-            )
-            {
-                faceActionMapping_[faceI] = actionIdx;
-                jetDirection_[faceI] = hasJetDirection ? jetDir : patchNormal[faceI];
-            }
-        }
-    }
-}
-
-
 void Foam::agentJetFvPatchVectorField::loadModel()
 {
     if ((modelType_ == "PyTorch" && !ptModel_) || (modelType_ == "TensorFlow" && !tfModel_))
@@ -228,13 +228,15 @@ void Foam::agentJetFvPatchVectorField::loadModel()
 
 Foam::scalarField Foam::agentJetFvPatchVectorField::agentAction(const scalarField& state)
 {
+    scalarField rawAction;
+
     // if (modelType_ == "PyTorch")
     // {
-    //     return agentActionPT(state);
+    //     rawAction = agentActionPT(state);
     // }
     if (modelType_ == "TensorFlow")
     {
-        return agentActionTF(state);
+        rawAction = agentActionTF(state);
     }
     else
     {
@@ -244,6 +246,13 @@ Foam::scalarField Foam::agentJetFvPatchVectorField::agentAction(const scalarFiel
             << abort(FatalError);
         return scalarField();
     }
+
+    if (zeroMeanAction_ && nActions_ > 1)
+    {
+        rawAction = rawAction - sum(rawAction) / nActions_;
+    }
+
+    return rawAction;
 }
 
 
@@ -318,12 +327,12 @@ void Foam::agentJetFvPatchVectorField::writeFileHeader(Ostream& os)
 {
     writer_->writeHeader(os, "Trajectory actions and states");
     writer_->writeCommented(os, "Time");
-    writer_->writeCommented(os, "Action");
+    writer_->writeCommented(os, "Action(" + Foam::name(nActions_) + ")");
     writer_->writeCommented(os, "State (" + Foam::name(stateProbeLocations_.size()) + ")");
     os << endl;
 }
 
-//TODO: Write multi component action
+
 void Foam::agentJetFvPatchVectorField::writeStateAction
 (
     const scalarField& state,
@@ -335,11 +344,14 @@ void Foam::agentJetFvPatchVectorField::writeStateAction
     Ostream& os = writer_->file();
     writer_->writeCurrentTime(os);
 
-    os  << actionNew;
+    forAll(actionNew, i)
+    {
+        os  << tab << actionNew[i];
+    }    
     forAll(state, i)
     {
         os  << tab << state[i];
-    }    
+    }
     os  << endl;
 }
 
@@ -360,9 +372,10 @@ agentJetFvPatchVectorField
     controlPeriod_(0),
     rampUpPeriod_(0),
     nActions_(1),
+    zeroMeanAction_(false),
     faceActionMapping_(),
-    actionNew_(0),
-    actionOld_(0),
+    actionNew_(),
+    actionOld_(),
     jetDirection_(p.size()),
     curTimeIndex_(-1),
     stateFieldName_(),
@@ -395,6 +408,7 @@ agentJetFvPatchVectorField
     controlPeriod_(ptf.controlPeriod_),
     rampUpPeriod_(ptf.rampUpPeriod_),
     nActions_(ptf.nActions_),
+    zeroMeanAction_(ptf.zeroMeanAction_),
     faceActionMapping_(ptf.faceActionMapping_),
     actionNew_(ptf.actionNew_),
     actionOld_(ptf.actionOld_),
@@ -429,8 +443,9 @@ agentJetFvPatchVectorField
     controlPeriod_(dict.get<scalar>("controlPeriod")),
     rampUpPeriod_(dict.get<scalar>("rampUpPeriod")),
     nActions_(dict.getOrDefault<label>("nActions", 1)),
-    actionNew_(dict.getOrDefault<scalarField>("actionNew", scalarField(nActions_, 0))),
-    actionOld_(dict.getOrDefault<scalarField>("actionOld", scalarField(nActions_, 0))),
+    zeroMeanAction_(dict.getOrDefault<bool>("zeroMeanAction", false)),
+    actionNew_("actionNew", dict, nActions_, IOobjectOption::LAZY_READ),
+    actionOld_("actionOld", dict, nActions_, IOobjectOption::LAZY_READ),
     curTimeIndex_(-1),
     stateFieldName_(dict.get<word>("stateField")),
     stateProbesNo_(dict.get<label>("stateProbesNo")),
@@ -483,6 +498,7 @@ agentJetFvPatchVectorField
     controlPeriod_(ptf.controlPeriod_),
     rampUpPeriod_(ptf.rampUpPeriod_),
     nActions_(ptf.nActions_),
+    zeroMeanAction_(ptf.zeroMeanAction_),
     faceActionMapping_(ptf.faceActionMapping_),
     actionNew_(ptf.actionNew_),
     actionOld_(ptf.actionOld_),
@@ -516,6 +532,7 @@ agentJetFvPatchVectorField
     controlPeriod_(ptf.controlPeriod_),
     rampUpPeriod_(ptf.rampUpPeriod_),
     nActions_(ptf.nActions_),
+    zeroMeanAction_(ptf.zeroMeanAction_),
     faceActionMapping_(ptf.faceActionMapping_),
     actionNew_(ptf.actionNew_),
     actionOld_(ptf.actionOld_),
@@ -639,10 +656,11 @@ void Foam::agentJetFvPatchVectorField::write(Ostream& os) const
     os.writeEntry("controlPeriod", controlPeriod_);
     os.writeEntry("rampUpPeriod", rampUpPeriod_);
     os.writeEntry("nActions", nActions_);
+    os.writeEntry<bool>("zeroMeanAction", zeroMeanAction_);
     os.writeEntry<word>("policyDir", policyDirName_);
     os.writeEntry<word>("modelType", modelType_);
-    os.writeEntry("actionNew", actionNew_);
-    os.writeEntry("actionOld", actionOld_);
+    actionNew_.writeEntry("actionNew", os);
+    actionOld_.writeEntry("actionOld", os);
     faceActionMapping_.writeEntry("faceActionMapping", os);
     jetDirection_.writeEntry("jetDirections", os);
     os.writeEntry<word>("stateField", stateFieldName_);

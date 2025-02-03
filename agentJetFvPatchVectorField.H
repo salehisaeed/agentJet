@@ -80,6 +80,9 @@ class agentJetFvPatchVectorField
         //- Number of actions
         label nActions_;
 
+        //- Zero mean multi action
+        bool zeroMeanAction_;
+
         //- Stores the action index for each face
         labelList faceActionMapping_;
 

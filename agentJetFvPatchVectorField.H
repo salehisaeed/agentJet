@@ -146,7 +146,7 @@ class agentJetFvPatchVectorField
         //- Make agent action
         scalarField agentAction(const scalarField& state);
         scalarField agentActionTF(const scalarField& state);
-        scalar agentActionPT(const scalarField& state);
+        scalarField agentActionPT(const scalarField& state);
 
         //- Initialize the write
         void initializeWriter();

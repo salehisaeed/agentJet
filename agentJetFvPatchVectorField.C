@@ -118,7 +118,6 @@ void Foam::agentJetFvPatchVectorField::initializeFaceMapping()
         forAll(patch(), faceI)
         {
             const vector faceCenter = patch().Cf()[faceI];
-
             if
             (
                 faceCenter.x() >= minCorner.x() && faceCenter.x() <= maxCorner.x() &&
@@ -230,11 +229,11 @@ Foam::scalarField Foam::agentJetFvPatchVectorField::agentAction(const scalarFiel
 {
     scalarField rawAction;
 
-    // if (modelType_ == "PyTorch")
-    // {
-    //     rawAction = agentActionPT(state);
-    // }
-    if (modelType_ == "TensorFlow")
+    if (modelType_ == "PyTorch")
+    {
+        rawAction = agentActionPT(state);
+    }
+    else if (modelType_ == "TensorFlow")
     {
         rawAction = agentActionTF(state);
     }
@@ -249,14 +248,14 @@ Foam::scalarField Foam::agentJetFvPatchVectorField::agentAction(const scalarFiel
 
     if (zeroMeanAction_ && nActions_ > 1)
     {
-        rawAction = rawAction - sum(rawAction) / nActions_;
+        rawAction = rawAction - sum(rawAction)/nActions_;
     }
 
     return rawAction;
 }
 
 
-Foam::scalar Foam::agentJetFvPatchVectorField::agentActionPT(const scalarField& state)
+Foam::scalarField Foam::agentJetFvPatchVectorField::agentActionPT(const scalarField& state)
 {
     std::vector<scalar> stateVec(state.begin(), state.end());
 
@@ -272,7 +271,17 @@ Foam::scalar Foam::agentJetFvPatchVectorField::agentActionPT(const scalarField& 
     torch::Tensor action_tensor = ptModel_->forward({obs_tensor, deterministic_}).toTensor();
 
     // Get the raw action value from the model
-    scalar rawAction = action_tensor[0][0].item<scalar>();
+    std::vector<scalar> rawActionVec
+    (
+        action_tensor.data_ptr<scalar>(),
+        action_tensor.data_ptr<scalar>() + nActions_
+    );
+    scalarField rawAction(rawActionVec.size());
+    forAll(rawAction, i)
+    {
+        rawAction[i] = rawActionVec[i];
+    }    
+
     return rawAction;
 }
 
@@ -428,6 +437,8 @@ agentJetFvPatchVectorField
 {}
 
 
+//TODO: Do we really need actionOld_?
+//TODO: Does actionNew_ get initialized with zero?
 Foam::agentJetFvPatchVectorField::
 agentJetFvPatchVectorField
 (

@@ -62,8 +62,9 @@ void Foam::agentJetFvPatchVectorField::initializeFaceMapping()
                 }
                 else
                 {
-                    FatalErrorInFunction << "Injection jetDirection magnitude is too small"
-                                         << abort(FatalError);
+                    FatalErrorInFunction
+                        << "Injection jetDirection magnitude is too small"
+                        << abort(FatalError);
                 }
             }
         }
@@ -362,6 +363,9 @@ void Foam::agentJetFvPatchVectorField::writeStateAction
         os  << tab << state[i];
     }
     os  << endl;
+
+    Info<< "New action = " << actionNew_ 
+        << ", Old action = " << actionOld_ << endl;
 }
 
 
@@ -624,13 +628,7 @@ void Foam::agentJetFvPatchVectorField::updateCoeffs()
                 actionOld_ = actionNew_;
                 actionNew_ = agentAction(state);
                 writeStateAction(state, actionNew_);
-                Info<< "New action = " 
-                    << actionNew_
-                    << ", Old action = "
-                    << actionOld_ 
-                    << endl;
             }
-            // Broadcast the same action value on all processors when parallel processing
             Pstream::broadcast(actionNew_);
             Pstream::broadcast(actionOld_);
         }

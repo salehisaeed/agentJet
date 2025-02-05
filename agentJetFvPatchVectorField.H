@@ -145,7 +145,11 @@ class agentJetFvPatchVectorField
 
         //- Make agent action
         scalarField agentAction(const scalarField& state);
+
+        //- Make agent action using TensorFlow model
         scalarField agentActionTF(const scalarField& state);
+
+        //- Make agent action using PyTorch model
         scalarField agentActionPT(const scalarField& state);
 
         //- Initialize the write

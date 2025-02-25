@@ -38,11 +38,12 @@ void Foam::agentJetFvPatchVectorField::initializeFaceMapping()
 {
     faceActionMapping_.setSize(patch().size(), 0);
     jetDirection_.setSize(patch().size());
-    const vectorField& patchNormal = patch().nf();
+    const vectorField patchNormal = patch().nf();
 
     if (dict_.found("faceActionMapping") && dict_.found("jetDirections"))
     {
-        faceActionMapping_ = dict_.lookup("faceActionMapping");
+        // faceActionMapping_ = dict_.lookup("faceActionMapping");
+        faceActionMapping_ = scalarField("faceActionMapping", dict_, patch().size());
         jetDirection_ = vectorField("jetDirections", dict_, patch().size());
         return;
     }
@@ -379,7 +380,6 @@ agentJetFvPatchVectorField
 )
 :
     fixedValueFvPatchField<vector>(p, iF),
-    // functionObjects::writeFile(db(), typeName, "ActionState"),
     dict_(),
     deterministic_(false),
     controlPeriod_(0),
@@ -422,7 +422,7 @@ agentJetFvPatchVectorField
     rampUpPeriod_(ptf.rampUpPeriod_),
     nActions_(ptf.nActions_),
     zeroMeanAction_(ptf.zeroMeanAction_),
-    faceActionMapping_(ptf.faceActionMapping_),
+    faceActionMapping_(ptf.faceActionMapping_, mapper),
     actionNew_(ptf.actionNew_),
     actionOld_(ptf.actionOld_),
     jetDirection_(ptf.jetDirection_, mapper),
@@ -479,7 +479,16 @@ agentJetFvPatchVectorField
         dict,
         stateProbesNo_
     );
-     
+    
+    if (zeroMeanAction_)
+    {
+        WarningInFunction
+            << "zeroMeanAction is enabled. "
+            << "Ensure all jets are either inward or outward. "
+            << "Otherwise, the applied jets will not have zero mean."
+            << endl;
+    }
+
     if (controlPeriod_ < rampUpPeriod_)
     {
         FatalErrorInFunction
@@ -577,6 +586,7 @@ void Foam::agentJetFvPatchVectorField::autoMap
     fixedValueFvPatchField<vector>::autoMap(m);
 
     jetDirection_.autoMap(m);
+    faceActionMapping_.autoMap(m);
 }
 
 
@@ -590,6 +600,7 @@ void Foam::agentJetFvPatchVectorField::rmap
 
     const auto& aj = dynamic_cast<const Foam::agentJetFvPatchVectorField&>(ptf);
     jetDirection_.rmap(aj.jetDirection_, addr);
+    faceActionMapping_.rmap(aj.faceActionMapping_, addr);
 }
 
 

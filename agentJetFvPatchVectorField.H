@@ -84,7 +84,7 @@ class agentJetFvPatchVectorField
         bool zeroMeanAction_;
 
         //- Stores the action index for each face
-        labelList faceActionMapping_;
+        scalarField faceActionMapping_;
 
         //- Next action
         scalarField actionNew_;

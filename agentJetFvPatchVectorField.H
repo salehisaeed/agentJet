@@ -77,8 +77,8 @@ class agentJetFvPatchVectorField
         //- Times to ramp-up a new controller value must be less than or equal to controlInterval_
         scalar rampUpPeriod_;
 
-        //- Number of actions
-        label nActions_;
+        //- Number of actuators
+        label nActuators_;
 
         //- Zero mean multi action
         bool zeroMeanAction_;
@@ -137,7 +137,7 @@ class agentJetFvPatchVectorField
         //- Get environment state
         scalarField environmentState();
 
-        //- This function assigns each face to the correct bounding box action
+        //- This function assigns each face to the correct bounding box of actuators
         void initializeFaceMapping();
 
         // Function to load the model

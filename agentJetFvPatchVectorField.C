@@ -48,8 +48,8 @@ void Foam::agentJetFvPatchVectorField::initializeFaceMapping()
         return;
     }
 
-    // Handle single-action case
-    if (nActions_ == 1)
+    // Handle single-actuator case
+    if (nActuators_ == 1)
     {
         if (dict_.found("jetDirection"))
         {
@@ -77,11 +77,11 @@ void Foam::agentJetFvPatchVectorField::initializeFaceMapping()
         return;
     }
 
-    // Multi-action case (nActions_ > 1) requires multiActionMapping dictionary
+    // Multi-actuator case (nActuators_ > 1) requires multiActionMapping dictionary
     if (!dict_.found("multiActionMapping"))
     {
         FatalErrorInFunction
-            << "'multiActionMapping' must be provided when nActions > 1."
+            << "'multiActionMapping' must be provided when nActuators > 1."
             << abort(FatalError);
     }
 
@@ -248,9 +248,9 @@ Foam::scalarField Foam::agentJetFvPatchVectorField::agentAction(const scalarFiel
         return scalarField();
     }
 
-    if (zeroMeanAction_ && nActions_ > 1)
+    if (zeroMeanAction_ && nActuators_ > 1)
     {
-        rawAction = rawAction - sum(rawAction)/nActions_;
+        rawAction = rawAction - sum(rawAction)/nActuators_;
     }
 
     return rawAction;
@@ -276,7 +276,7 @@ Foam::scalarField Foam::agentJetFvPatchVectorField::agentActionPT(const scalarFi
     std::vector<scalar> rawActionVec
     (
         action_tensor.data_ptr<scalar>(),
-        action_tensor.data_ptr<scalar>() + nActions_
+        action_tensor.data_ptr<scalar>() + nActuators_
     );
     scalarField rawAction(rawActionVec.size());
     forAll(rawAction, i)
@@ -338,7 +338,7 @@ void Foam::agentJetFvPatchVectorField::writeFileHeader(Ostream& os)
 {
     writer_->writeHeader(os, "Trajectory actions and states");
     writer_->writeCommented(os, "Time");
-    writer_->writeCommented(os, "Action(" + Foam::name(nActions_) + ")");
+    writer_->writeCommented(os, "Action(" + Foam::name(nActuators_) + ")");
     writer_->writeCommented(os, "State (" + Foam::name(stateProbeLocations_.size()) + ")");
     os << endl;
 }
@@ -384,7 +384,7 @@ agentJetFvPatchVectorField
     deterministic_(false),
     controlPeriod_(0),
     rampUpPeriod_(0),
-    nActions_(1),
+    nActuators_(1),
     zeroMeanAction_(false),
     faceActionMapping_(),
     actionNew_(),
@@ -420,7 +420,7 @@ agentJetFvPatchVectorField
     deterministic_(ptf.deterministic_),
     controlPeriod_(ptf.controlPeriod_),
     rampUpPeriod_(ptf.rampUpPeriod_),
-    nActions_(ptf.nActions_),
+    nActuators_(ptf.nActuators_),
     zeroMeanAction_(ptf.zeroMeanAction_),
     faceActionMapping_(ptf.faceActionMapping_, mapper),
     actionNew_(ptf.actionNew_),
@@ -457,10 +457,10 @@ agentJetFvPatchVectorField
     deterministic_(dict.get<bool>("deterministic")),
     controlPeriod_(dict.get<scalar>("controlPeriod")),
     rampUpPeriod_(dict.get<scalar>("rampUpPeriod")),
-    nActions_(dict.getOrDefault<label>("nActions", 1)),
+    nActuators_(dict.getOrDefault<label>("nActuators", 1)),
     zeroMeanAction_(dict.getOrDefault<bool>("zeroMeanAction", false)),
-    actionNew_("actionNew", dict, nActions_, IOobjectOption::LAZY_READ),
-    actionOld_("actionOld", dict, nActions_, IOobjectOption::LAZY_READ),
+    actionNew_("actionNew", dict, nActuators_, IOobjectOption::LAZY_READ),
+    actionOld_("actionOld", dict, nActuators_, IOobjectOption::LAZY_READ),
     curTimeIndex_(-1),
     stateFieldName_(dict.get<word>("stateField")),
     stateProbesNo_(dict.get<label>("stateProbesNo")),
@@ -521,7 +521,7 @@ agentJetFvPatchVectorField
     deterministic_(ptf.deterministic_),
     controlPeriod_(ptf.controlPeriod_),
     rampUpPeriod_(ptf.rampUpPeriod_),
-    nActions_(ptf.nActions_),
+    nActuators_(ptf.nActuators_),
     zeroMeanAction_(ptf.zeroMeanAction_),
     faceActionMapping_(ptf.faceActionMapping_),
     actionNew_(ptf.actionNew_),
@@ -555,7 +555,7 @@ agentJetFvPatchVectorField
     deterministic_(ptf.deterministic_),
     controlPeriod_(ptf.controlPeriod_),
     rampUpPeriod_(ptf.rampUpPeriod_),
-    nActions_(ptf.nActions_),
+    nActuators_(ptf.nActuators_),
     zeroMeanAction_(ptf.zeroMeanAction_),
     faceActionMapping_(ptf.faceActionMapping_),
     actionNew_(ptf.actionNew_),
@@ -675,7 +675,7 @@ void Foam::agentJetFvPatchVectorField::write(Ostream& os) const
     os.writeEntry<bool>("deterministic", deterministic_);
     os.writeEntry("controlPeriod", controlPeriod_);
     os.writeEntry("rampUpPeriod", rampUpPeriod_);
-    os.writeEntry("nActions", nActions_);
+    os.writeEntry("nActuators", nActuators_);
     os.writeEntry<bool>("zeroMeanAction", zeroMeanAction_);
     os.writeEntry<word>("policyDir", policyDirName_);
     os.writeEntry<word>("modelType", modelType_);

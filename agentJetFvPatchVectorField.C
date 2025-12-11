@@ -367,7 +367,7 @@ void Foam::agentJetFvPatchVectorField::writeStateAction
     }
     os  << endl;
 
-    Info<< "New action = " << actionNew_ 
+    Info<< this->patch().name() << ", New action = " << actionNew_ 
         << ", Old action = " << actionOld_ << endl;
 }
 

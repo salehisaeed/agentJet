@@ -326,7 +326,9 @@ void Foam::agentJetFvPatchVectorField::initializeWriter()
 {
     if (!writer_)
     {
-        writer_.reset(new functionObjects::writeFile(db(), typeName, "ActionState", dict_));
+        const word patchName = this->patch().name();
+        const word fileName = "ActionState_" + patchName;
+        writer_.reset(new functionObjects::writeFile(db(), typeName, fileName, dict_));
 
         Ostream& os = writer_->file();
         writeFileHeader(os);
